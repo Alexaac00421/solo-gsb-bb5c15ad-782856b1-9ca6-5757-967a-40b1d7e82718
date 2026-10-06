@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>内网前缀委派平台</title>
+<style>
+  :root { --bg:#f4f6f9; --card:#fff; --line:#e2e7ee; --pri:#2456d6; --ok:#1a8a4d; --warn:#c47f00; --err:#c0392b; --muted:#6a7585; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family:-apple-system,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif; background:var(--bg); color:#1f2733; }
+  header { background:#16315e; color:#fff; padding:12px 24px; display:flex; align-items:center; gap:16px; flex-wrap:wrap; }
+  header h1 { font-size:18px; margin:0; font-weight:600; }
+  header .sp { flex:1; }
+  main { max-width:1240px; margin:20px auto; padding:0 16px; display:grid; grid-template-columns:300px 1fr; gap:16px; align-items:start; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:16px; margin-bottom:16px; }
+  .card h2 { font-size:15px; margin:0 0 12px; }
+  label { display:block; font-size:12px; color:var(--muted); margin:8px 0 4px; }
+  input, select { width:100%; padding:7px 9px; border:1px solid var(--line); border-radius:6px; font-size:13px; }
+  button { background:var(--pri); color:#fff; border:0; border-radius:6px; padding:7px 14px; font-size:13px; cursor:pointer; margin-top:10px; }
+  button.sec { background:#5c6b80; }
+  button.danger { background:var(--err); }
+  button.small { padding:2px 8px; font-size:12px; margin:0 0 0 6px; }
+  table { width:100%; border-collapse:collapse; font-size:12.5px; }
+  th, td { text-align:left; padding:6px 8px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { color:var(--muted); font-weight:600; }
+  .muted { color:var(--muted); font-size:12px; }
+  .tag { display:inline-block; font-size:11px; padding:1px 7px; border-radius:10px; margin-right:4px; }
+  .tag.root { background:#e3ecfd; color:#2456d6; }
+  .tag.allocation { background:#e1f4ea; color:var(--ok); }
+  .tag.reservation { background:#fdf0d9; color:var(--warn); }
+  .tag.released { background:#eee; color:#888; }
+  #toast { position:fixed; right:20px; bottom:20px; max-width:460px; z-index:99; }
+  .toast-item { padding:10px 14px; border-radius:8px; color:#fff; font-size:13px; margin-top:8px; box-shadow:0 4px 14px rgba(0,0,0,.18); word-break:break-all; }
+  .toast-item.ok { background:var(--ok); } .toast-item.err { background:var(--err); } .toast-item.info { background:#34495e; }
+  .tree ul { list-style:none; padding-left:20px; margin:2px 0; border-left:1px dashed #cfd8e3; }
+  .tree > ul { padding-left:0; border-left:0; }
+  .node { padding:5px 8px; border-radius:6px; font-size:13px; }
+  .node:hover { background:#eef3fb; }
+  .node .cidr { font-family:ui-monospace,Menlo,Consolas,monospace; font-weight:600; }
+  .hidden { display:none; }
+  .reqline { font-family:ui-monospace,Menlo,Consolas,monospace; font-size:12px; color:var(--muted); margin-top:4px; }
+  @media (max-width: 900px) { main { grid-template-columns:1fr; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>🌐 内网前缀委派平台</h1>
+  <div class="sp"></div>
+  <span id="who" class="muted" style="color:#cdd8ea"></span>
+  <button id="btnLogout" class="sec small hidden">退出</button>
+</header>
+
+<!-- 登录 -->
+<div id="loginView" class="card" style="max-width:380px;margin:60px auto;">
+  <h2>登录</h2>
+  <label>用户名</label><input id="loginUser" value="admin" />
+  <label>密码</label><input id="loginPass" type="password" value="admin123" />
+  <button id="btnLogin">登录</button>
+  <p class="muted">初始管理员：admin / admin123（可用环境变量修改）</p>
+</div>
+
+<main id="appView" class="hidden">
+  <div>
+    <div class="card">
+      <h2>地址域</h2>
+      <select id="domainSel" size="5"></select>
+      <label>地址族</label>
+      <select id="familySel"><option value="">全部</option><option value="4">IPv4</option><option value="6">IPv6</option></select>
+      <button id="btnRefresh">刷新前缀树</button>
+      <div id="adminDomain" class="hidden">
+        <hr style="border:0;border-top:1px solid var(--line);margin:12px 0" />
+        <h2>新建地址域</h2>
+        <label>名称</label><input id="domName" placeholder="如：生产网" />
+        <label>说明</label><input id="domDesc" />
+        <button id="btnCreateDomain">创建</button>
+      </div>
+    </div>
+
+    <div id="adminRootBox" class="card hidden">
+      <h2>创建根前缀（管理员）</h2>
+      <label>CIDR（规范写法）</label><input id="rootCidr" placeholder="10.0.0.0/8 或 2001:db8::/32" />
+      <label>用途（可选）</label><input id="rootPurpose" />
+      <button id="btnCreateRoot">创建根前缀</button>
+    </div>
+
+    <div class="card">
+      <h2>申请子前缀</h2>
+      <p class="muted">需为父前缀持有人或管理员。系统自动选取父范围内数值最小的对齐空闲子前缀。</p>
+      <label>父前缀编号</label><input id="allocParent" placeholder="如：3" />
+      <label>目标前缀长度</label><input id="allocLen" type="number" placeholder="如：24" />
+      <label>用途</label><input id="allocPurpose" />
+      <label id="allocHolderLbl" class="hidden">委派给持有人编号（可选，默认自己）</label><input id="allocHolder" class="hidden" placeholder="用户 ID" />
+      <button id="btnAllocate">申请</button>
+    </div>
+
+    <div id="adminReserveBox" class="card hidden">
+      <h2>保留子前缀（管理员）</h2>
+      <label>父前缀编号</label><input id="resParent" />
+      <label>保留 CIDR</label><input id="resCidr" placeholder="10.10.0.0/16" />
+      <label>用途（可选）</label><input id="resPurpose" />
+      <button id="btnReserve">保留</button>
+    </div>
+
+    <div id="adminUsersBox" class="card hidden">
+      <h2>用户管理（管理员）</h2>
+      <table><thead><tr><th>ID</th><th>用户名</th><th>角色</th></tr></thead><tbody id="userRows"></tbody></table>
+      <label>新用户名</label><input id="nuName" />
+      <label>密码</label><input id="nuPass" type="password" />
+      <label>角色</label><select id="nuRole"><option value="holder">地址持有人</option><option value="admin">管理员</option></select>
+      <label>显示名（可选）</label><input id="nuDisplay" />
+      <button id="btnCreateUser">创建用户</button>
+    </div>
+  </div>
+
+  <div>
+    <div class="card">
+      <h2>当前前缀树（有效）</h2>
+      <div id="tree" class="tree"></div>
+    </div>
+    <div id="historyCard" class="card hidden">
+      <h2>全量历史（含已释放，管理员）</h2>
+      <table><thead><tr><th>#</th><th>CIDR</th><th>类型</th><th>状态</th><th>持有人</th><th>用途</th></tr></thead><tbody id="historyRows"></tbody></table>
+    </div>
+  </div>
+</main>
+
+<div id="toast"></div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let me = null;
+
+function uuid() {
+  if (crypto.randomUUID) return crypto.randomUUID();
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+    const r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
+}
+
+function toast(msg, kind = 'info') {
+  const el = document.createElement('div');
+  el.className = 'toast-item ' + kind;
+  el.textContent = msg;
+  $('toast').appendChild(el);
+  setTimeout(() => el.remove(), 6000);
+}
+
+async function api(method, url, body) {
+  const opts = { method, headers: { 'Content-Type': 'application/json' }, credentials: 'same-origin' };
+  if (body !== undefined) {
+    opts.headers['X-Idempotency-Key'] = uuid();
+    opts.body = JSON.stringify(body);
+  }
+  const res = await fetch(url, opts);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const e = new Error((data.error && data.error.message) || ('HTTP ' + res.status));
+    e.code = data.error && data.error.code;
+    throw e;
+  }
+  return data;
+}
+
+// ---------- 登录 ----------
+$('btnLogin').onclick = async () => {
+  try {
+    const r = await api('POST', '/api/auth/login', { username: $('loginUser').value.trim(), password: $('loginPass').value });
+    me = r.user;
+    enterApp();
+  } catch (e) { toast('登录失败：' + e.message, 'err'); }
+};
+$('btnLogout').onclick = async () => {
+  await api('POST', '/api/auth/logout', {}).catch(() => {});
+  location.reload();
+};
+
+async function bootstrap() {
+  try {
+    const r = await fetch('/api/auth/me').then(r => r.json());
+    if (r.user) { me = r.user; enterApp(); }
+  } catch (_) {}
+}
+
+function enterApp() {
+  $('loginView').classList.add('hidden');
+  $('appView').classList.remove('hidden');
+  $('who').textContent = `${me.display_name || me.username}（${me.role === 'admin' ? '管理员' : '地址持有人'}）`;
+  $('btnLogout').classList.remove('hidden');
+  if (me.role === 'admin') {
+    $('adminDomain').classList.remove('hidden');
+    $('adminRootBox').classList.remove('hidden');
+    $('adminReserveBox').classList.remove('hidden');
+    $('adminUsersBox').classList.remove('hidden');
+    $('historyCard').classList.remove('hidden');
+    loadUsers();
+    $('allocHolderLbl').classList.remove('hidden');
+    $('allocHolder').classList.remove('hidden');
+  }
+  loadDomains();
+}
+
+// ---------- 地址域 ----------
+async function loadDomains(selectId) {
+  const r = await api('GET', '/api/domains');
+  const sel = $('domainSel');
+  sel.innerHTML = '';
+  r.domains.forEach(d => {
+    const o = document.createElement('option');
+    o.value = d.id; o.textContent = `${d.name} (#${d.id})`;
+    sel.appendChild(o);
+  });
+  if (selectId) sel.value = String(selectId);
+  if (sel.value) loadTree();
+  else $('tree').innerHTML = '<p class="muted">尚无地址域，请管理员先创建。</p>';
+}
+$('domainSel').onchange = loadTree;
+$('familySel').onchange = loadTree;
+$('btnRefresh').onclick = loadTree;
+$('btnCreateDomain').onclick = async () => {
+  try {
+    const r = await api('POST', '/api/domains', { name: $('domName').value.trim(), description: $('domDesc').value.trim() });
+    toast(`地址域已创建，请求号 ${r.request_no}`, 'ok');
+    $('domName').value = ''; $('domDesc').value = '';
+    await loadDomains(r.domain.id);
+  } catch (e) { toast('创建失败：' + e.message, 'err'); }
+};
+
+// ---------- 前缀树 ----------
+async function loadTree() {
+  const dom = $('domainSel').value;
+  if (!dom) return;
+  const fam = $('familySel').value;
+  const url = `/api/prefixes/tree?domain=${dom}` + (fam ? `&family=${fam}` : '');
+  const r = await api('GET', url);
+  renderTree(r.tree);
+  if (me.role === 'admin') loadHistory(dom, fam);
+}
+
+function renderTree(roots) {
+  const box = $('tree');
+  if (!roots.length) { box.innerHTML = '<p class="muted">该域下还没有有效根前缀。</p>'; return; }
+  const ul = document.createElement('ul');
+  roots.forEach(n => ul.appendChild(renderNode(n)));
+  box.innerHTML = '';
+  box.appendChild(ul);
+}
+
+function renderNode(n) {
+  const li = document.createElement('li');
+  const div = document.createElement('div');
+  div.className = 'node';
+  const famTxt = n.family === 4 ? 'v4' : 'v6';
+  const canRelease = me.role === 'admin' || n.holder_id === me.id;
+  div.innerHTML =
+    `<span class="cidr">${n.cidr}</span> ` +
+    `<span class="muted">[${famTxt} #${n.id}]</span> ` +
+    `<span class="tag ${n.kind}">${ {root:'根',allocation:'分配',reservation:'保留'}[n.kind] }</span>` +
+    `<span class="muted">${n.holder_name ? '持有人：' + n.holder_name : ''}</span>` +
+    `<div class="muted">${n.purpose ? '用途：' + escapeHtml(n.purpose) : ''}</div>`;
+  if (canRelease) {
+    const b = document.createElement('button');
+    b.className = 'danger small'; b.textContent = '释放';
+    b.onclick = () => doRelease(n.id);
+    div.appendChild(b);
+  }
+  const a = document.createElement('button');
+  a.className = 'sec small'; a.textContent = '在此申请';
+  a.onclick = () => { $('allocParent').value = n.id; $('allocLen').value = n.length + 1; window.scrollTo(0,0); };
+  div.appendChild(a);
+  if (me.role === 'admin' && n.kind !== 'reservation') {
+    const r = document.createElement('button');
+    r.className = 'sec small'; r.textContent = '在此保留';
+    r.onclick = () => { $('resParent').value = n.id; window.scrollTo(0,0); };
+    div.appendChild(r);
+  }
+  li.appendChild(div);
+  if (n.children.length) {
+    const ul = document.createElement('ul');
+    n.children.forEach(c => ul.appendChild(renderNode(c)));
+    li.appendChild(ul);
+  }
+  return li;
+}
+
+function escapeHtml(s) { return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+// ---------- 操作 ----------
+$('btnCreateRoot').onclick = async () => {
+  try {
+    const r = await api('POST', '/api/prefixes/roots', { domain: $('domainSel').value, cidr: $('rootCidr').value.trim(), purpose: $('rootPurpose').value.trim() });
+    toast(`根前缀创建成功：${r.prefix.cidr}，请求号 ${r.request_no}`, 'ok');
+    $('rootCidr').value = ''; $('rootPurpose').value = '';
+    loadTree();
+  } catch (e) { toast('创建失败 [' + (e.code || '') + ']：' + e.message, 'err'); }
+};
+
+$('btnAllocate').onclick = async () => {
+  try {
+    const body = {
+      parentId: Number($('allocParent').value),
+      targetLength: Number($('allocLen').value),
+      purpose: $('allocPurpose').value.trim()
+    };
+    if (me.role === 'admin' && $('allocHolder').value.trim()) body.holderId = Number($('allocHolder').value.trim());
+    const r = await api('POST', '/api/prefixes/allocate', body);
+    toast(`分配成功：${r.prefix.cidr}（编号 ${r.number}，请求号 ${r.request_no}${r.replayed ? '，幂等重放' : ''}）`, 'ok');
+    $('allocPurpose').value = '';
+    loadTree();
+  } catch (e) { toast('申请被拒绝 [' + (e.code || '') + ']：' + e.message, 'err'); }
+};
+
+$('btnReserve').onclick = async () => {
+  try {
+    const r = await api('POST', '/api/prefixes/reserve', {
+      parentId: Number($('resParent').value),
+      cidr: $('resCidr').value.trim(),
+      purpose: $('resPurpose').value.trim()
+    });
+    toast(`保留成功：${r.prefix.cidr}（请求号 ${r.request_no}）`, 'ok');
+    $('resCidr').value = ''; $('resPurpose').value = '';
+    loadTree();
+  } catch (e) { toast('保留被拒绝 [' + (e.code || '') + ']：' + e.message, 'err'); }
+};
+
+async function doRelease(id) {
+  if (!confirm(`确认释放前缀 #${id}？释放后地址可重用，历史记录仍保留。`)) return;
+  try {
+    const r = await api('POST', `/api/prefixes/${id}/release`, {});
+    toast(`已释放 ${r.prefix.cidr}，请求号 ${r.request_no}`, 'ok');
+    loadTree();
+  } catch (e) { toast('释放被拒绝 [' + (e.code || '') + ']：' + e.message, 'err'); }
+}
+
+async function loadHistory(dom, fam) {
+  try {
+    const url = `/api/prefixes/history?domain=${dom}` + (fam ? `&family=${fam}` : '');
+    const r = await api('GET', url);
+    $('historyRows').innerHTML = r.prefixes.map(p =>
+      `<tr><td>${p.id}</td><td>${p.cidr}</td><td>${ {root:'根',allocation:'分配',reservation:'保留'}[p.kind] }</td>` +
+      `<td><span class="tag ${p.status}">${p.status === 'active' ? '有效' : '已释放'}</span>${p.released_at ? new Date(p.released_at).toLocaleString() : ''}</td>` +
+      `<td>${p.holder_name || '—'}</td><td>${escapeHtml(p.purpose || '')}</td></tr>`
+    ).join('');
+  } catch (_) {}
+}
+
+async function loadUsers() {
+  try {
+    const r = await api('GET', '/api/users');
+    $('userRows').innerHTML = r.users.map(u => `<tr><td>${u.id}</td><td>${u.username}</td><td>${u.role}</td></tr>`).join('');
+  } catch (_) {}
+}
+$('btnCreateUser').onclick = async () => {
+  try {
+    const r = await api('POST', '/api/users', {
+      username: $('nuName').value.trim(),
+      password: $('nuPass').value,
+      role: $('nuRole').value,
+      displayName: $('nuDisplay').value.trim()
+    });
+    toast(`用户已创建，请求号 ${r.request_no}`, 'ok');
+    $('nuName').value = ''; $('nuPass').value = ''; $('nuDisplay').value = '';
+    loadUsers();
+  } catch (e) { toast('创建失败：' + e.message, 'err'); }
+};
+
+bootstrap();
+</script>
+</body>
+</html>
