@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>前缀委派平台 · Prefix Delegation</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <header>
+    <h1>内网前缀委派平台</h1>
+    <div id="userbox"></div>
+  </header>
+
+  <main>
+    <section id="loginView" class="card">
+      <h2>登录</h2>
+      <form id="loginForm">
+        <label>用户名 <input name="username" autocomplete="username" required /></label>
+        <label>密码 <input name="password" type="password" autocomplete="current-password" required /></label>
+        <button type="submit">登录</button>
+      </form>
+      <hr />
+      <h3>注册地址持有人</h3>
+      <form id="registerForm">
+        <label>用户名 <input name="username" required /></label>
+        <label>密码 (≥8位) <input name="password" type="password" required /></label>
+        <button type="submit">注册持有人</button>
+      </form>
+    </section>
+
+    <section id="appView" hidden>
+      <div class="layout">
+        <aside class="card">
+          <h2>地址域</h2>
+          <div id="domainList"></div>
+          <form id="domainForm" class="adminOnly" hidden>
+            <h3>新建地址域</h3>
+            <label>名称 <input name="name" required placeholder="corp-lab" /></label>
+            <label>描述 <input name="description" /></label>
+            <button type="submit">创建</button>
+          </form>
+
+          <div id="rootFormWrap" class="adminOnly" hidden>
+            <h3>新建根前缀</h3>
+            <form id="rootForm">
+              <label>根 CIDR <input name="cidr" required placeholder="10.0.0.0/8 或 2001:db8::/32" /></label>
+              <label>用途 <input name="purpose" /></label>
+              <button type="submit">创建根前缀</button>
+            </form>
+          </div>
+        </aside>
+
+        <section class="card grow">
+          <div class="tree-head">
+            <h2>前缀树</h2>
+            <div>
+              <label>族
+                <select id="familySelect">
+                  <option value="4">IPv4</option>
+                  <option value="6">IPv6</option>
+                </select>
+              </label>
+              <button id="refreshBtn">刷新</button>
+            </div>
+          </div>
+          <div id="tree"></div>
+        </section>
+
+        <aside class="card">
+          <h2>操作</h2>
+          <form id="allocateForm">
+            <h3>申请子前缀</h3>
+            <p class="hint">在选中的有效父前缀下分配数值最小、按边界对齐的子前缀。</p>
+            <label>父前缀编号 <input name="parent_id" id="allocParent" required readonly /></label>
+            <label>目标长度 / <input name="target_len" type="number" required min="1" max="128" /></label>
+            <label>用途 <input name="purpose" /></label>
+            <label class="adminOnly" hidden>委派给用户编号 (可选，留空归自己)
+              <input name="holder_id" type="number" min="1" placeholder="holder user id" />
+            </label>
+            <button type="submit">申请分配</button>
+          </form>
+
+          <form id="reserveForm" class="adminOnly" hidden>
+            <h3>保留指定子前缀</h3>
+            <p class="hint">CIDR 必须边界对齐，并位于所选父前缀（或任意有效根）之内。</p>
+            <label>CIDR <input name="cidr" required placeholder="10.1.2.0/24" /></label>
+            <label>用途 <input name="purpose" /></label>
+            <button type="submit">保留</button>
+          </form>
+
+          <form id="releaseForm">
+            <h3>释放前缀</h3>
+            <label>前缀编号 <input name="prefix_id" id="releasePrefix" readonly /></label>
+            <label>备注 <input name="note" /></label>
+            <button type="submit" class="danger">释放</button>
+          </form>
+
+          <div id="actionResult"></div>
+        </aside>
+      </div>
+    </section>
+  </main>
+
+  <div id="toast"></div>
+  <script src="/app.js"></script>
+</body>
+</html>

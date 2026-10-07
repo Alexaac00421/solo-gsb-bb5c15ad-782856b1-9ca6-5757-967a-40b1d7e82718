@@ -1,0 +1,26 @@
+{
+  "name": "prefix-delegation",
+  "version": "1.0.0",
+  "description": "Intranet IPv4/IPv6 prefix delegation web console (Node.js + PostgreSQL)",
+  "main": "src/server.js",
+  "type": "commonjs",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "test:cidr": "node test/cidr.test.js",
+    "test:e2e": "node test/e2e.test.js",
+    "test:concurrency": "node test/concurrency.test.js",
+    "test": "npm run test:cidr && npm run test:e2e && npm run test:concurrency"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "express": "^4.21.2",
+    "jsonwebtoken": "^9.0.2",
+    "pg": "^8.13.1"
+  },
+  "devDependencies": {
+    "embedded-postgres": "^10.20.0-beta.6"
+  }
+}
